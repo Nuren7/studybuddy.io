@@ -6,6 +6,39 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+async function findRelevantStudyMaterial(query: string, apiKey: string, supabase: ReturnType<typeof createClient>) {
+  const embeddingResponse = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model: "text-embedding-3-small", input: query }),
+  });
+
+  if (!embeddingResponse.ok) {
+    console.error("Embedding request failed:", embeddingResponse.status);
+    return [];
+  }
+
+  const embeddingResult = await embeddingResponse.json();
+  const embedding = embeddingResult.data?.[0]?.embedding as number[] | undefined;
+  if (!embedding) return [];
+
+  const { data, error } = await supabase.rpc("match_study_materials", {
+    query_embedding: embedding,
+    match_count: 5,
+    similarity_threshold: 0.55,
+  });
+
+  if (error) {
+    console.error("Study material search failed:", error);
+    return [];
+  }
+
+  return data ?? [];
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -20,14 +53,25 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    );
+
+    const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
+    let studyMaterialContext = "";
+    if (lastUserMessage?.content) {
+      const matches = await findRelevantStudyMaterial(lastUserMessage.content, LOVABLE_API_KEY, supabase);
+      if (matches.length > 0) {
+        studyMaterialContext = `\n\n--- Relevant study material ---\n${matches
+          .map((match) => `[${match.title}]\n${match.content}`)
+          .join("\n\n")}\n--- End relevant study material ---\n`;
+      }
+    }
+
     // Process attachments if any
     let attachmentContext = "";
     if (attachments && attachments.length > 0) {
-      const supabase = createClient(
-        Deno.env.get("SUPABASE_URL") ?? "",
-        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-      );
-
       for (const attachment of attachments) {
         console.log("Processing attachment:", attachment.name, attachment.type);
         
@@ -69,10 +113,10 @@ serve(async (req) => {
 
     // Prepare messages with attachment context
     const processedMessages = [...messages];
-    if (attachmentContext && processedMessages.length > 0) {
+    if ((attachmentContext || studyMaterialContext) && processedMessages.length > 0) {
       const lastUserMessage = processedMessages[processedMessages.length - 1];
       if (lastUserMessage.role === "user") {
-        lastUserMessage.content = lastUserMessage.content + attachmentContext;
+        lastUserMessage.content = lastUserMessage.content + studyMaterialContext + attachmentContext;
       }
     }
 
