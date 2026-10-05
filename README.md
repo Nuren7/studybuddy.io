@@ -116,6 +116,12 @@ supabase secrets set LANGCHAIN_PROJECT=StudyBuddy-RAG-Monitoring
 
 After a chat message or `python llmops/rag_trace_demo.py`, open [LangSmith](https://smith.langchain.com) and inspect project **StudyBuddy-RAG-Monitoring**.
 
+### LangSmith example
+
+A simple example in the public assets shows the type of question-and-answer trace this setup can produce. In the sample image, the prompt was: **"How does photosynthesis work?"** and the answer is captured in the screenshot below.
+
+![LangSmith example answer for the question "How does photosynthesis work?"](./public/Langsmith_example.png)
+
 If a LangSmith API key was ever pasted into chat, rotate it in LangSmith settings and update secrets.
 
 ## Index Study Material
