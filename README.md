@@ -39,7 +39,9 @@ supabase/
   functions/chat/      Streaming chat, attachments, and retrieval
   functions/study-materials/
                        Index and search study content
+  functions/_shared/   LangSmith tracing helpers
   migrations/          Storage and pgvector database setup
+llmops/                Python LangSmith practice demo
 ```
 
 ## Technology
@@ -50,6 +52,7 @@ supabase/
 - Supabase Postgres, Storage, and Edge Functions
 - `pgvector` for semantic similarity search
 - Lovable AI Gateway with Gemini chat completions and text embeddings
+- LangSmith for RAG tracing (Edge Functions + Python `llmops/` demo)
 
 ## Local Setup
 
@@ -67,12 +70,14 @@ npm install
 npm run dev
 ```
 
-The Vite app expects these values in a local `.env` file:
+Copy [`.env.example`](.env.example) to `.env` and fill in values. The Vite app needs:
 
 ```env
 VITE_SUPABASE_URL=your_supabase_project_url
 VITE_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
 ```
+
+LangSmith keys must **not** use a `VITE_` prefix. They stay on the server (`supabase secrets`) and in the gitignored `.env` used by `llmops/`.
 
 ### Configure the backend
 
@@ -84,6 +89,34 @@ supabase functions deploy chat
 supabase functions deploy study-materials
 supabase secrets set LOVABLE_API_KEY=your_lovable_api_key
 ```
+
+## LangSmith Observability
+
+Production traces come from the Deno Edge Functions (`chat` and `study-materials`). They wrap retrieval, embeddings, and generation with LangSmith `traceable` via [`supabase/functions/_shared/langsmith.ts`](supabase/functions/_shared/langsmith.ts). If `LANGCHAIN_API_KEY` is missing, tracing is skipped and chat still works.
+
+The [`llmops/`](llmops/) folder is a Python practice layer (`load_dotenv` + `@traceable`). It does not replace the Edge Functions. See [`llmops/README.md`](llmops/README.md).
+
+Set these variables in gitignored `.env` (placeholders only in `.env.example`):
+
+```env
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+LANGCHAIN_API_KEY=ls__your_langsmith_api_key_here
+LANGCHAIN_PROJECT=StudyBuddy-RAG-Monitoring
+```
+
+For deployed functions:
+
+```bash
+supabase secrets set LANGCHAIN_TRACING_V2=true
+supabase secrets set LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+supabase secrets set LANGCHAIN_API_KEY=your_langsmith_api_key
+supabase secrets set LANGCHAIN_PROJECT=StudyBuddy-RAG-Monitoring
+```
+
+After a chat message or `python llmops/rag_trace_demo.py`, open [LangSmith](https://smith.langchain.com) and inspect project **StudyBuddy-RAG-Monitoring**.
+
+If a LangSmith API key was ever pasted into chat, rotate it in LangSmith settings and update secrets.
 
 ## Index Study Material
 

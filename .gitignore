@@ -12,6 +12,16 @@ dist
 dist-ssr
 *.local
 
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+llmops/.env
+llmops/.venv/
+llmops/__pycache__/
+**/__pycache__/
+*.pyc
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

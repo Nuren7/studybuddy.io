@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { traced } from "../_shared/langsmith.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,7 +9,7 @@ const corsHeaders = {
 
 const embeddingModel = "text-embedding-3-small";
 
-async function createEmbedding(text: string, apiKey: string) {
+async function createEmbeddingRaw(text: string, apiKey: string) {
   const response = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
     method: "POST",
     headers: {
@@ -25,6 +26,63 @@ async function createEmbedding(text: string, apiKey: string) {
   const result = await response.json();
   return result.data?.[0]?.embedding as number[] | undefined;
 }
+
+const createEmbedding = traced(createEmbeddingRaw, {
+  name: "create_embedding",
+  run_type: "embedding",
+  metadata: { model: embeddingModel, component: "study-materials" },
+});
+
+async function indexStudyMaterialRaw(
+  title: string,
+  content: string,
+  source: string | undefined,
+  apiKey: string,
+  supabase: ReturnType<typeof createClient>,
+) {
+  const embedding = await createEmbedding(`${title}\n\n${content}`, apiKey);
+  if (!embedding) throw new Error("Embedding response did not contain a vector");
+
+  const { data, error } = await supabase
+    .from("study_materials")
+    .insert({ title: title.trim(), content: content.trim(), source, embedding })
+    .select("id, title, source, created_at")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+const indexStudyMaterial = traced(indexStudyMaterialRaw, {
+  name: "index_study_material",
+  run_type: "chain",
+  metadata: { component: "study-materials", action: "index" },
+});
+
+async function searchStudyMaterialsRaw(
+  query: string,
+  limit: number,
+  apiKey: string,
+  supabase: ReturnType<typeof createClient>,
+) {
+  const embedding = await createEmbedding(query.trim(), apiKey);
+  if (!embedding) throw new Error("Embedding response did not contain a vector");
+
+  const { data, error } = await supabase.rpc("match_study_materials", {
+    query_embedding: embedding,
+    match_count: limit,
+    similarity_threshold: 0.55,
+  });
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+const searchStudyMaterials = traced(searchStudyMaterialsRaw, {
+  name: "search_study_materials",
+  run_type: "retriever",
+  metadata: { component: "study-materials", action: "search" },
+});
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -52,16 +110,7 @@ serve(async (req) => {
         });
       }
 
-      const embedding = await createEmbedding(`${title}\n\n${content}`, apiKey);
-      if (!embedding) throw new Error("Embedding response did not contain a vector");
-
-      const { data, error } = await supabase
-        .from("study_materials")
-        .insert({ title: title.trim(), content: content.trim(), source, embedding })
-        .select("id, title, source, created_at")
-        .single();
-
-      if (error) throw error;
+      const data = await indexStudyMaterial(title, content, source, apiKey, supabase);
       return new Response(JSON.stringify({ material: data }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -74,17 +123,8 @@ serve(async (req) => {
       });
     }
 
-    const embedding = await createEmbedding(query.trim(), apiKey);
-    if (!embedding) throw new Error("Embedding response did not contain a vector");
-
-    const { data, error } = await supabase.rpc("match_study_materials", {
-      query_embedding: embedding,
-      match_count: limit,
-      similarity_threshold: 0.55,
-    });
-
-    if (error) throw error;
-    return new Response(JSON.stringify({ results: data ?? [] }), {
+    const data = await searchStudyMaterials(query, limit, apiKey, supabase);
+    return new Response(JSON.stringify({ results: data }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
