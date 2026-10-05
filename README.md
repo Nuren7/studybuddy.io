@@ -122,7 +122,6 @@ A simple example in the public assets shows the type of question-and-answer trac
 
 ![LangSmith example answer for the question "How does photosynthesis work?"](./public/Langsmith_example.png)
 
-If a LangSmith API key was ever pasted into chat, rotate it in LangSmith settings and update secrets.
 
 ## Index Study Material
 
@@ -138,20 +137,3 @@ Example request body for indexing:
   "source": "biology-notes.md"
 }
 ```
-
-After material has been indexed, normal chat questions automatically retrieve relevant matches. No special search action is needed in the UI.
-
-## Available Scripts
-
-```bash
-npm run dev      
-npm run build     
-npm run lint      
-npm run preview   
-```
-
-## Current Limitations
-
-- Only text-based attachments are extracted; PDFs and other binary formats are not parsed yet.
-- The current material index endpoint is intended for trusted ingestion and does not include a document-management UI.
-- Authentication and per-user study libraries can be added as the project grows.
